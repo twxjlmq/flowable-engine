@@ -37,9 +37,10 @@ public class ELExecutionContextBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(ELExecutionContextBuilder.class);
 
     public static ELExecutionContext build(Decision decision, ExecuteDecisionInfo executeDecisionInfo) {
-
         ELExecutionContext executionContext = new ELExecutionContext();
-        Map<String, Object> inputVariables = executeDecisionInfo.getVariables();
+        executionContext.setInstanceId(executeDecisionInfo.getInstanceId());
+        executionContext.setScopeType(executeDecisionInfo.getScopeType());
+        executionContext.setTenantId(executeDecisionInfo.getTenantId());
 
         // initialize audit trail
         executionContext.setAuditContainer(DecisionExecutionAuditUtil.initializeRuleExecutionAudit(decision, executeDecisionInfo));
@@ -61,8 +62,8 @@ public class ELExecutionContextBuilder {
             executionContext.setAggregator(decisionTable.getAggregation());
         }
 
+        Map<String, Object> inputVariables = executeDecisionInfo.getVariables();
         preProcessInputVariables(decisionTable, inputVariables);
-
         executionContext.setStackVariables(inputVariables);
 
         LOGGER.debug("Execution Context created");

@@ -12,6 +12,9 @@
  */
 package org.flowable.cmmn.engine.impl.behavior.impl;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.commons.lang3.StringUtils;
 import org.flowable.cmmn.api.CallbackTypes;
 import org.flowable.cmmn.api.delegate.DelegatePlanItemInstance;
@@ -34,9 +37,6 @@ import org.flowable.common.engine.impl.interceptor.CommandContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * @author Joram Barrez
  */
@@ -48,6 +48,7 @@ public class ProcessTaskActivityBehavior extends ChildTaskActivityBehavior imple
     protected Expression processRefExpression;
     protected String processRef;
     protected Boolean fallbackToDefaultTenant;
+    protected ProcessTask processTask;
 
     public ProcessTaskActivityBehavior(Process process, Expression processRefExpression, ProcessTask processTask) {
         super(processTask.isBlocking(), processTask.getBlockingExpression(), processTask.getInParameters(), processTask.getOutParameters());
@@ -55,6 +56,7 @@ public class ProcessTaskActivityBehavior extends ChildTaskActivityBehavior imple
         this.processRefExpression = processRefExpression;
         this.processRef = processTask.getProcessRef();
         this.fallbackToDefaultTenant = processTask.getFallbackToDefaultTenant();
+        this.processTask = processTask;
     }
 
     @Override
@@ -85,6 +87,14 @@ public class ProcessTaskActivityBehavior extends ChildTaskActivityBehavior imple
         }
 
         String processInstanceId = processInstanceService.generateNewProcessInstanceId();
+        if (StringUtils.isNotEmpty(processTask.getProcessInstanceIdVariableName())) {
+            Expression expression = cmmnEngineConfiguration.getExpressionManager().createExpression(processTask.getProcessInstanceIdVariableName());
+            String idVariableName = (String) expression.getValue(planItemInstanceEntity);
+            if (StringUtils.isNotEmpty(idVariableName)) {
+                planItemInstanceEntity.setVariable(idVariableName, processInstanceId);
+            }
+        }
+
         planItemInstanceEntity.setReferenceType(CallbackTypes.PLAN_ITEM_CHILD_PROCESS);
         planItemInstanceEntity.setReferenceId(processInstanceId);
 
@@ -93,13 +103,15 @@ public class ProcessTaskActivityBehavior extends ChildTaskActivityBehavior imple
             EntityLinkUtil.createNewEntityLink(planItemInstanceEntity.getCaseInstanceId(), processInstanceId, ScopeTypes.BPMN);
         }
 
+        String businessKey = getBusinessKey(cmmnEngineConfiguration, planItemInstanceEntity, processTask);
+
         boolean blocking = evaluateIsBlocking(planItemInstanceEntity);
         if (blocking) {
             processInstanceService.startProcessInstanceByKey(externalRef, processInstanceId, planItemInstanceEntity.getId(),
-                    planItemInstanceEntity.getTenantId(), fallbackToDefaultTenant, inParametersMap);
+                    planItemInstanceEntity.getTenantId(), fallbackToDefaultTenant, inParametersMap, businessKey);
         } else {
             processInstanceService.startProcessInstanceByKey(externalRef, processInstanceId,
-                    planItemInstanceEntity.getTenantId(), fallbackToDefaultTenant, inParametersMap);
+                    planItemInstanceEntity.getTenantId(), fallbackToDefaultTenant, inParametersMap, businessKey);
         }
 
         if (!blocking) {

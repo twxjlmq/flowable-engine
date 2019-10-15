@@ -13,6 +13,8 @@
 
 package org.flowable.engine.test.bpmn.subprocess;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Iterator;
@@ -68,7 +70,8 @@ public class SubProcessTest extends PluggableFlowableTestCase {
     @Deployment
     public void testSimpleSubProcessWithTimer() {
 
-        Date startTime = new Date();
+        // We need to make sure the time ends on .000, .003 or .007 due to SQL Server rounding to that
+        Date startTime = Date.from(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusMillis(677));
 
         // After staring the process, the task in the subprocess should be active
         ProcessInstance pi = runtimeService.startProcessInstanceByKey("simpleSubProcess");
@@ -155,16 +158,17 @@ public class SubProcessTest extends PluggableFlowableTestCase {
     @Test
     @Deployment
     public void testNestedSimpleSubprocessWithTimerOnInnerSubProcess() {
-        Date startTime = new Date();
+        // We need to make sure the time ends on .000, .003 or .007 due to SQL Server rounding to that
+        Date startTime = Date.from(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusMillis(370));
 
         // After staring the process, the task in the subprocess should be active
         ProcessInstance pi = runtimeService.startProcessInstanceByKey("nestedSubProcessWithTimer");
         org.flowable.task.api.Task subProcessTask = taskService.createTaskQuery().processInstanceId(pi.getId()).singleResult();
         assertEquals("Task in subprocess", subProcessTask.getName());
 
-        // Setting the clock forward 1 hour 1 second (timer fires in 1 hour) and
+        // Setting the clock forward 1 hour 5 second (timer fires in 1 hour) and
         // fire up the job executor
-        processEngineConfiguration.getClock().setCurrentTime(new Date(startTime.getTime() + (60 * 60 * 1000) + 1000));
+        processEngineConfiguration.getClock().setCurrentTime(new Date(startTime.getTime() + (60 * 60 * 1000) + 5000));
         waitForJobExecutorToProcessAllJobs(7000L, 50L);
 
         // The inner subprocess should be destroyed, and the escalated task should be active

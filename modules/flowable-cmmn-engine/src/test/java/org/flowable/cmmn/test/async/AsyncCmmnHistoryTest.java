@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.time.Instant;
 import java.time.temporal.ChronoField;
+import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -412,6 +413,8 @@ public class AsyncCmmnHistoryTest extends CustomCmmnConfigurationFlowableTestCas
         assertTrue(historicPlanItemInstances.stream().map(HistoricPlanItemInstance::getPlanItemDefinitionType).anyMatch(PlanItemDefinitionType.MILESTONE::equalsIgnoreCase));
         assertTrue(historicPlanItemInstances.stream().anyMatch(h -> "task".equalsIgnoreCase(h.getPlanItemDefinitionType()) && "planItemTaskA".equalsIgnoreCase(h.getElementId())));
         
+        boolean showInOverviewMilestone = false;
+        Date lastEnabledTimeTaskA = null;
         for (HistoricPlanItemInstance historicPlanItemInstance : historicPlanItemInstances) {
             assertEquals(caseInstance.getId(), historicPlanItemInstance.getCaseInstanceId());
             assertEquals(caseInstance.getCaseDefinitionId(), historicPlanItemInstance.getCaseDefinitionId());
@@ -426,12 +429,17 @@ public class AsyncCmmnHistoryTest extends CustomCmmnConfigurationFlowableTestCas
             assertNull(historicPlanItemInstance.getEntryCriterionId());
             assertNull(historicPlanItemInstance.getExitCriterionId());
             
-            if (historicPlanItemInstance.getElementId().equals("planItemTaskA")) {
-                assertNotNull(historicPlanItemInstance.getLastEnabledTime());
+            if ("planItemTaskA".equals(historicPlanItemInstance.getElementId())) {
+                lastEnabledTimeTaskA = historicPlanItemInstance.getLastEnabledTime();
+            } else if ("planItemMilestoneOne".equals(historicPlanItemInstance.getElementId())) {
+                showInOverviewMilestone = historicPlanItemInstance.isShowInOverview();
             } else {
                 assertNull(historicPlanItemInstance.getLastEnabledTime());
             }
         }
+        
+        assertNotNull(lastEnabledTimeTaskA);
+        assertTrue(showInOverviewMilestone);
         
         // Disable task
         PlanItemInstance task = cmmnRuntimeService.createPlanItemInstanceQuery().planItemInstanceElementId("planItemTaskA").singleResult();
@@ -499,6 +507,10 @@ public class AsyncCmmnHistoryTest extends CustomCmmnConfigurationFlowableTestCas
         assertNull(completedHistoricPlanItemInstance.getTerminatedTime());
         assertNotNull(completedHistoricPlanItemInstance.getLastUpdatedTime());
         assertTrue(historicPlanItemInstance.getLastUpdatedTime().before(completedHistoricPlanItemInstance.getLastUpdatedTime()));
+        
+        HistoricPlanItemInstance completedMilestoneInstance = cmmnHistoryService.createHistoricPlanItemInstanceQuery().planItemInstanceElementId("planItemMilestoneOne").singleResult();
+        assertNotNull(completedMilestoneInstance.getEndedTime());
+        assertTrue(completedMilestoneInstance.isShowInOverview());
         
         cmmnEngineConfiguration.getClock().reset();
     }
@@ -669,7 +681,8 @@ public class AsyncCmmnHistoryTest extends CustomCmmnConfigurationFlowableTestCas
     @Test
     @CmmnDeployment
     public void testPlanItemInstancesStateChangesWithFixedTime() {
-        Date fixTime = Date.from(Instant.now());
+        // We need to make sure the time ends on .000, .003 or .007 due to SQL Server rounding to that
+        Date fixTime = Date.from(Instant.now().truncatedTo(ChronoUnit.SECONDS).plusMillis(823));
         cmmnEngineConfiguration.getClock().setCurrentTime(fixTime);
 
         CaseInstance caseInstance = cmmnRuntimeService.createCaseInstanceBuilder()

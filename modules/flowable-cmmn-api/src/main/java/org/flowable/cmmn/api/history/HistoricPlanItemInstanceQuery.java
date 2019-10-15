@@ -38,6 +38,7 @@ public interface HistoricPlanItemInstanceQuery extends Query<HistoricPlanItemIns
     HistoricPlanItemInstanceQuery planItemInstanceReferenceType(String referenceType);
     HistoricPlanItemInstanceQuery planItemInstanceEntryCriterionId(String entryCriterionId);
     HistoricPlanItemInstanceQuery planItemInstanceExitCriterionId(String exitCriterionId);
+    HistoricPlanItemInstanceQuery onlyStages();
     HistoricPlanItemInstanceQuery planItemInstanceTenantId(String tenantId);
     HistoricPlanItemInstanceQuery planItemInstanceWithoutTenantId();
     HistoricPlanItemInstanceQuery planItemInstanceTenantIdLike(String tenantIdLike);
@@ -67,5 +68,15 @@ public interface HistoricPlanItemInstanceQuery extends Query<HistoricPlanItemIns
     HistoricPlanItemInstanceQuery notEnded();
     HistoricPlanItemInstanceQuery orderByCreateTime();
     HistoricPlanItemInstanceQuery orderByEndedTime();
+    HistoricPlanItemInstanceQuery orderByLastAvailableTime();
+    HistoricPlanItemInstanceQuery orderByLastEnabledTime();
+    HistoricPlanItemInstanceQuery orderByLastDisabledTime();
+    HistoricPlanItemInstanceQuery orderByLastStartedTime();
+    HistoricPlanItemInstanceQuery orderByLastSuspendedTime();
+    HistoricPlanItemInstanceQuery orderByLastUpdatedTime();
+    HistoricPlanItemInstanceQuery orderByCompletedTime();
+    HistoricPlanItemInstanceQuery orderByOccurredTime();
+    HistoricPlanItemInstanceQuery orderByTerminatedTime();
+    HistoricPlanItemInstanceQuery orderByExitTime();
     HistoricPlanItemInstanceQuery orderByName();
 }

@@ -35,6 +35,7 @@ import org.flowable.cmmn.api.CmmnManagementService;
 import org.flowable.cmmn.api.CmmnRepositoryService;
 import org.flowable.cmmn.api.CmmnRuntimeService;
 import org.flowable.cmmn.api.CmmnTaskService;
+import org.flowable.cmmn.api.DecisionTableVariableManager;
 import org.flowable.cmmn.api.listener.PlanItemInstanceLifecycleListener;
 import org.flowable.cmmn.engine.impl.CmmnEngineImpl;
 import org.flowable.cmmn.engine.impl.CmmnHistoryServiceImpl;
@@ -203,6 +204,7 @@ import org.flowable.common.engine.impl.calendar.DurationBusinessCalendar;
 import org.flowable.common.engine.impl.calendar.MapBusinessCalendarManager;
 import org.flowable.common.engine.impl.callback.RuntimeInstanceStateChangeCallback;
 import org.flowable.common.engine.impl.cfg.BeansConfigurationHelper;
+import org.flowable.common.engine.impl.cfg.mail.MailServerInfo;
 import org.flowable.common.engine.impl.db.AbstractDataManager;
 import org.flowable.common.engine.impl.db.SchemaManager;
 import org.flowable.common.engine.impl.el.ExpressionManager;
@@ -213,6 +215,7 @@ import org.flowable.common.engine.impl.el.function.VariableEqualsExpressionFunct
 import org.flowable.common.engine.impl.el.function.VariableExistsExpressionFunction;
 import org.flowable.common.engine.impl.el.function.VariableGetExpressionFunction;
 import org.flowable.common.engine.impl.el.function.VariableGetOrDefaultExpressionFunction;
+import org.flowable.common.engine.impl.el.function.VariableBase64ExpressionFunction;
 import org.flowable.common.engine.impl.el.function.VariableGreaterThanExpressionFunction;
 import org.flowable.common.engine.impl.el.function.VariableGreaterThanOrEqualsExpressionFunction;
 import org.flowable.common.engine.impl.el.function.VariableIsEmptyExpressionFunction;
@@ -337,6 +340,8 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
     protected boolean disableIdmEngine;
     
     protected CandidateManager candidateManager;
+    
+    protected DecisionTableVariableManager decisionTableVariableManager;
 
     protected CaseInstanceHelper caseInstanceHelper;
     protected CmmnHistoryManager cmmnHistoryManager;
@@ -446,6 +451,19 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
     // Set Http Client config defaults
     protected HttpClientConfig httpClientConfig = new HttpClientConfig();
 
+    // Email
+    protected String mailServerHost = "localhost";
+    protected String mailServerUsername; // by default no name and password are provided, which
+    protected String mailServerPassword; // means no authentication for mail server
+    protected int mailServerPort = 25;
+    protected boolean useSSL;
+    protected boolean useTLS;
+    protected String mailServerDefaultFrom = "flowable@localhost";
+    protected String mailServerForceTo;
+    protected String mailSessionJndi;
+    protected Map<String, MailServerInfo> mailServers = new HashMap<>();
+    protected Map<String, String> mailSessionsJndi = new HashMap<>();
+
     // Async executor
     protected JobServiceConfiguration jobServiceConfiguration;
 
@@ -501,7 +519,7 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
      *
      * This property is only applicable when using the threadpool-based async executor.
      */
-    protected int asyncExecutorCorePoolSize = 2;
+    protected int asyncExecutorCorePoolSize = 8;
 
     /**
      * The maximum number of threads that are created in the threadpool for job execution.
@@ -509,7 +527,7 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
      *
      * This property is only applicable when using the threadpool-based async executor.
      */
-    protected int asyncExecutorMaxPoolSize = 10;
+    protected int asyncExecutorMaxPoolSize = 8;
 
     /**
      * The time (in milliseconds) a thread used for job execution must be kept alive before it is destroyed.
@@ -548,6 +566,15 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
      * This property is only applicable when using the threadpool-based async executor.
      */
     protected long asyncExecutorSecondsToWaitOnShutdown = 60L;
+
+    /**
+     * Whether or not core threads can time out (which is needed to scale down the threads). Default true.
+     *
+     * This property is only applicable when using the threadpool-based async executor.
+     */
+    protected boolean asyncExecutorAllowCoreThreadTimeout = true;
+
+    protected String asyncExecutorTenantId = AbstractEngineConfiguration.NO_TENANT_ID;
 
     /**
      * The number of timer jobs that are acquired during one query
@@ -683,8 +710,8 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     // More info: see similar async executor properties.
     protected int asyncHistoryExecutorNumberOfRetries = 10;
-    protected int asyncHistoryExecutorCorePoolSize = 2;
-    protected int asyncHistoryExecutorMaxPoolSize = 10;
+    protected int asyncHistoryExecutorCorePoolSize = 8;
+    protected int asyncHistoryExecutorMaxPoolSize = 8;
     protected long asyncHistoryExecutorThreadKeepAliveTime = 5000L;
     protected int asyncHistoryExecutorThreadPoolQueueSize = 100;
     protected BlockingQueue<Runnable> asyncHistoryExecutorThreadPoolQueue;
@@ -723,6 +750,8 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
      */
     protected TaskPostProcessor taskPostProcessor;
 
+    protected boolean handleCmmnEngineExecutorsAfterEngineCreate = true;
+
     public static CmmnEngineConfiguration createCmmnEngineConfigurationFromResourceDefault() {
         return createCmmnEngineConfigurationFromResource("flowable.cmmn.cfg.xml", "cmmnEngineConfiguration");
     }
@@ -753,7 +782,13 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     public CmmnEngine buildCmmnEngine() {
         init();
-        return new CmmnEngineImpl(this);
+        CmmnEngineImpl cmmnEngine = new CmmnEngineImpl(this);
+
+        if (handleCmmnEngineExecutorsAfterEngineCreate) {
+            cmmnEngine.handleExecutors();
+        }
+
+        return cmmnEngine;
     }
 
     protected void init() {
@@ -807,6 +842,7 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         initFormFieldHandler();
         initIdentityLinkInterceptor();
         initClock();
+        initEventDispatcher();
         initIdentityLinkServiceConfiguration();
         initEntityLinkServiceConfiguration();
         initEventSubscriptionServiceConfiguration();
@@ -909,25 +945,25 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         if (shortHandExpressionFunctions == null) {
             shortHandExpressionFunctions = new ArrayList<>();
             
-            String variableScopeName = "planItemInstance";
+            shortHandExpressionFunctions.add(new VariableGetExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableGetOrDefaultExpressionFunction());
             
-            shortHandExpressionFunctions.add(new VariableGetExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableGetOrDefaultExpressionFunction(variableScopeName));
+            shortHandExpressionFunctions.add(new VariableContainsAnyExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableContainsExpressionFunction());
             
-            shortHandExpressionFunctions.add(new VariableContainsAnyExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableContainsExpressionFunction(variableScopeName));
+            shortHandExpressionFunctions.add(new VariableEqualsExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableNotEqualsExpressionFunction());
             
-            shortHandExpressionFunctions.add(new VariableEqualsExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableNotEqualsExpressionFunction(variableScopeName));
+            shortHandExpressionFunctions.add(new VariableExistsExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableIsEmptyExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableIsNotEmptyExpressionFunction());
             
-            shortHandExpressionFunctions.add(new VariableExistsExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableIsEmptyExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableIsNotEmptyExpressionFunction(variableScopeName));
+            shortHandExpressionFunctions.add(new VariableLowerThanExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableLowerThanOrEqualsExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableGreaterThanExpressionFunction());
+            shortHandExpressionFunctions.add(new VariableGreaterThanOrEqualsExpressionFunction());
             
-            shortHandExpressionFunctions.add(new VariableLowerThanExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableLowerThanOrEqualsExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableGreaterThanExpressionFunction(variableScopeName));
-            shortHandExpressionFunctions.add(new VariableGreaterThanOrEqualsExpressionFunction(variableScopeName));
+            shortHandExpressionFunctions.add(new VariableBase64ExpressionFunction());
 
             shortHandExpressionFunctions.add(new IsStageCompletableExpressionFunction());
         }
@@ -1094,7 +1130,7 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     protected void initClassDelegateFactory() {
         if (classDelegateFactory == null) {
-            classDelegateFactory = new DefaultCmmnClassDelegateFactory();
+            classDelegateFactory = new DefaultCmmnClassDelegateFactory(expressionManager);
         }
     }
 
@@ -1740,8 +1776,14 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
             defaultAsyncExecutor.setResetExpiredJobsInterval(asyncExecutorResetExpiredJobsInterval);
             defaultAsyncExecutor.setResetExpiredJobsPageSize(asyncExecutorResetExpiredJobsPageSize);
 
+            // Core thread timeout
+            defaultAsyncExecutor.setAllowCoreThreadTimeout(asyncExecutorAllowCoreThreadTimeout);
+
             // Shutdown
             defaultAsyncExecutor.setSecondsToWaitOnShutdown(asyncExecutorSecondsToWaitOnShutdown);
+
+            // Tenant
+            defaultAsyncExecutor.setTenantId(asyncExecutorTenantId);
 
             asyncExecutor = defaultAsyncExecutor;
         }
@@ -2104,6 +2146,15 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     public CmmnEngineConfiguration setCandidateManager(CandidateManager candidateManager) {
         this.candidateManager = candidateManager;
+        return this;
+    }
+
+    public DecisionTableVariableManager getDecisionTableVariableManager() {
+        return decisionTableVariableManager;
+    }
+
+    public CmmnEngineConfiguration setDecisionTableVariableManager(DecisionTableVariableManager decisionTableVariableManager) {
+        this.decisionTableVariableManager = decisionTableVariableManager;
         return this;
     }
 
@@ -2904,6 +2955,15 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         return this;
     }
 
+    public boolean isAsyncExecutorAllowCoreThreadTimeout() {
+        return asyncExecutorAllowCoreThreadTimeout;
+    }
+
+    public CmmnEngineConfiguration setAsyncExecutorAllowCoreThreadTimeout(boolean asyncExecutorAllowCoreThreadTimeout) {
+        this.asyncExecutorAllowCoreThreadTimeout = asyncExecutorAllowCoreThreadTimeout;
+        return this;
+    }
+
     public int getAsyncExecutorMaxTimerJobsPerAcquisition() {
         return asyncExecutorMaxTimerJobsPerAcquisition;
     }
@@ -3355,6 +3415,113 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
         return this;
     }
 
+    public String getMailServerHost() {
+        return mailServerHost;
+    }
+
+    public CmmnEngineConfiguration setMailServerHost(String mailServerHost) {
+        this.mailServerHost = mailServerHost;
+        return this;
+    }
+
+    public String getMailServerUsername() {
+        return mailServerUsername;
+    }
+
+    public CmmnEngineConfiguration setMailServerUsername(String mailServerUsername) {
+        this.mailServerUsername = mailServerUsername;
+        return this;
+    }
+
+    public String getMailServerPassword() {
+        return mailServerPassword;
+    }
+
+    public CmmnEngineConfiguration setMailServerPassword(String mailServerPassword) {
+        this.mailServerPassword = mailServerPassword;
+        return this;
+    }
+
+    public int getMailServerPort() {
+        return mailServerPort;
+    }
+
+    public CmmnEngineConfiguration setMailServerPort(int mailServerPort) {
+        this.mailServerPort = mailServerPort;
+        return this;
+    }
+
+    public boolean getMailServerUseSSL() {
+        return useSSL;
+    }
+
+    public CmmnEngineConfiguration setMailServerUseSSL(boolean useSSL) {
+        this.useSSL = useSSL;
+        return this;
+    }
+
+    public boolean getMailServerUseTLS() {
+        return useTLS;
+    }
+
+    public CmmnEngineConfiguration setMailServerUseTLS(boolean useTLS) {
+        this.useTLS = useTLS;
+        return this;
+    }
+
+    public String getMailServerDefaultFrom() {
+        return mailServerDefaultFrom;
+    }
+
+    public CmmnEngineConfiguration setMailServerDefaultFrom(String mailServerDefaultFrom) {
+        this.mailServerDefaultFrom = mailServerDefaultFrom;
+        return this;
+    }
+
+    public String getMailServerForceTo() {
+        return mailServerForceTo;
+    }
+
+    public CmmnEngineConfiguration setMailServerForceTo(String mailServerForceTo) {
+        this.mailServerForceTo = mailServerForceTo;
+        return this;
+    }
+
+    public String getMailSessionJndi() {
+        return mailSessionJndi;
+    }
+
+    public CmmnEngineConfiguration setMailSessionJndi(String mailSessionJndi) {
+        this.mailSessionJndi = mailSessionJndi;
+        return this;
+    }
+
+    public Map<String, MailServerInfo> getMailServers() {
+        return mailServers;
+    }
+
+    public CmmnEngineConfiguration setMailServers(Map<String, MailServerInfo> mailServers) {
+        this.mailServers = mailServers;
+        return this;
+    }
+
+    public MailServerInfo getMailServer(String tenantId) {
+        return mailServers.get(tenantId);
+    }
+
+    public Map<String, String> getMailSessionsJndi() {
+        return mailSessionsJndi;
+    }
+
+    public CmmnEngineConfiguration setMailSessionsJndi(Map<String, String> mailSessionsJndi) {
+        this.mailSessionsJndi = mailSessionsJndi;
+        return this;
+    }
+
+    public String getMailSessionJndi(String tenantId) {
+        return mailSessionsJndi.get(tenantId);
+    }
+
     public FormFieldHandler getFormFieldHandler() {
         return formFieldHandler;
     }
@@ -3446,5 +3613,13 @@ public class CmmnEngineConfiguration extends AbstractEngineConfiguration impleme
 
     public void setCmmnHistoryCleaningManager(CmmnHistoryCleaningManager cmmnHistoryCleaningManager) {
         this.cmmnHistoryCleaningManager = cmmnHistoryCleaningManager;
+    }
+
+    public boolean isHandleCmmnEngineExecutorsAfterEngineCreate() {
+        return handleCmmnEngineExecutorsAfterEngineCreate;
+    }
+
+    public void setHandleCmmnEngineExecutorsAfterEngineCreate(boolean handleCmmnEngineExecutorsAfterEngineCreate) {
+        this.handleCmmnEngineExecutorsAfterEngineCreate = handleCmmnEngineExecutorsAfterEngineCreate;
     }
 }

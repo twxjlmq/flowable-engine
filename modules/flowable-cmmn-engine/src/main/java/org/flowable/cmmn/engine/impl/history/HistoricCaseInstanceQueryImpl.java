@@ -19,9 +19,16 @@ import java.util.Set;
 
 import org.flowable.cmmn.api.history.HistoricCaseInstance;
 import org.flowable.cmmn.api.history.HistoricCaseInstanceQuery;
+import org.flowable.cmmn.engine.impl.cmd.DeleteHistoricCaseInstanceCmd;
+import org.flowable.cmmn.engine.impl.cmd.DeleteHistoricCaseInstancesCmd;
+import org.flowable.cmmn.engine.impl.cmd.DeleteRelatedDataOfRemovedHistoricCaseInstancesCmd;
+import org.flowable.cmmn.engine.impl.cmd.DeleteTaskAndPlanItemInstanceDataOfRemovedHistoricCaseInstancesCmd;
 import org.flowable.cmmn.engine.impl.util.CommandContextUtil;
 import org.flowable.common.engine.api.FlowableException;
 import org.flowable.common.engine.api.FlowableIllegalArgumentException;
+import org.flowable.common.engine.api.query.QueryCacheValues;
+import org.flowable.common.engine.impl.context.Context;
+import org.flowable.common.engine.impl.interceptor.CommandConfig;
 import org.flowable.common.engine.impl.interceptor.CommandContext;
 import org.flowable.common.engine.impl.interceptor.CommandExecutor;
 import org.flowable.variable.service.impl.AbstractVariableQueryImpl;
@@ -30,7 +37,8 @@ import org.flowable.variable.service.impl.AbstractVariableQueryImpl;
  * @author Joram Barrez
  * @author Tijs Rademakers
  */
-public class HistoricCaseInstanceQueryImpl extends AbstractVariableQueryImpl<HistoricCaseInstanceQuery, HistoricCaseInstance> implements HistoricCaseInstanceQuery {
+public class HistoricCaseInstanceQueryImpl extends AbstractVariableQueryImpl<HistoricCaseInstanceQuery, HistoricCaseInstance> 
+        implements HistoricCaseInstanceQuery, QueryCacheValues {
 
     private static final long serialVersionUID = 1L;
     
@@ -445,6 +453,27 @@ public class HistoricCaseInstanceQueryImpl extends AbstractVariableQueryImpl<His
     }
 
     @Override
+    public void delete() {
+        if (commandExecutor != null) {
+            commandExecutor.execute(new DeleteHistoricCaseInstancesCmd(this));
+        } else {
+            new DeleteHistoricCaseInstancesCmd(this).execute(Context.getCommandContext());
+        }
+    }
+
+    @Override
+    public void deleteWithRelatedData() {
+        if (commandExecutor != null) {
+            CommandConfig config = new CommandConfig().transactionRequiresNew();
+            commandExecutor.execute(config, new DeleteHistoricCaseInstancesCmd(this));
+            commandExecutor.execute(config, new DeleteTaskAndPlanItemInstanceDataOfRemovedHistoricCaseInstancesCmd());
+            commandExecutor.execute(config, new DeleteRelatedDataOfRemovedHistoricCaseInstancesCmd());
+        } else {
+            throw new FlowableException("deleting historic case instances with related data requires CommandExecutor");
+        }
+    }
+
+    @Override
     public HistoricCaseInstanceQuery includeCaseVariables() {
         this.includeCaseVariables = true;
         return this;
@@ -678,6 +707,10 @@ public class HistoricCaseInstanceQueryImpl extends AbstractVariableQueryImpl<His
     }
 
     public String getCaseInstanceId() {
+        return caseInstanceId;
+    }
+    
+    public String getId() {
         return caseInstanceId;
     }
 

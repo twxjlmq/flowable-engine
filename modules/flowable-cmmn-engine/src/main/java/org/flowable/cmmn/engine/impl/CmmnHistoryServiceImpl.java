@@ -15,6 +15,7 @@ package org.flowable.cmmn.engine.impl;
 import java.util.List;
 
 import org.flowable.cmmn.api.CmmnHistoryService;
+import org.flowable.cmmn.api.StageResponse;
 import org.flowable.cmmn.api.history.HistoricCaseInstanceQuery;
 import org.flowable.cmmn.api.history.HistoricMilestoneInstanceQuery;
 import org.flowable.cmmn.api.history.HistoricPlanItemInstanceQuery;
@@ -30,6 +31,7 @@ import org.flowable.cmmn.engine.impl.cmd.GetHistoricEntityLinkChildrenForCaseIns
 import org.flowable.cmmn.engine.impl.cmd.GetHistoricEntityLinkParentsForCaseInstanceCmd;
 import org.flowable.cmmn.engine.impl.cmd.GetHistoricIdentityLinksForCaseInstanceCmd;
 import org.flowable.cmmn.engine.impl.cmd.GetHistoricIdentityLinksForTaskCmd;
+import org.flowable.cmmn.engine.impl.cmd.GetHistoricStageOverviewCmd;
 import org.flowable.cmmn.engine.impl.history.CmmnHistoricVariableInstanceQueryImpl;
 import org.flowable.cmmn.engine.impl.history.HistoricCaseInstanceQueryImpl;
 import org.flowable.common.engine.impl.interceptor.CommandConfig;
@@ -76,6 +78,11 @@ public class CmmnHistoryServiceImpl extends CommonEngineServiceImpl<CmmnEngineCo
     }
 
     @Override
+    public List<StageResponse> getStageOverview(String caseInstanceId) {
+        return commandExecutor.execute(new GetHistoricStageOverviewCmd(caseInstanceId));
+    }
+
+    @Override
     public void deleteHistoricCaseInstance(String caseInstanceId) {
         commandExecutor.execute(new DeleteHistoricCaseInstanceCmd(caseInstanceId));
     }
@@ -90,19 +97,6 @@ public class CmmnHistoryServiceImpl extends CommonEngineServiceImpl<CmmnEngineCo
         commandExecutor.execute(new DeleteHistoricTaskInstanceCmd(taskId));
     }
     
-    @Override
-    public void deleteHistoricCaseInstances(HistoricCaseInstanceQuery caseInstanceQuery) {
-        commandExecutor.execute(new DeleteHistoricCaseInstancesCmd((HistoricCaseInstanceQueryImpl) caseInstanceQuery));
-    }
-
-    @Override
-    public void deleteHistoricCaseInstancesAndRelatedData(HistoricCaseInstanceQuery caseInstanceQuery) {
-        CommandConfig config = new CommandConfig().transactionRequiresNew();
-        commandExecutor.execute(config, new DeleteHistoricCaseInstancesCmd((HistoricCaseInstanceQueryImpl) caseInstanceQuery));
-        commandExecutor.execute(config, new DeleteTaskAndPlanItemInstanceDataOfRemovedHistoricCaseInstancesCmd());
-        commandExecutor.execute(config, new DeleteRelatedDataOfRemovedHistoricCaseInstancesCmd());
-    }
-
     @Override
     public List<HistoricIdentityLink> getHistoricIdentityLinksForCaseInstance(String caseInstanceId) {
         return commandExecutor.execute(new GetHistoricIdentityLinksForCaseInstanceCmd(caseInstanceId));

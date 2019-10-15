@@ -19,14 +19,16 @@ import org.flowable.cmmn.api.history.HistoricPlanItemInstance;
 import org.flowable.cmmn.api.history.HistoricPlanItemInstanceQuery;
 import org.flowable.cmmn.engine.impl.util.CommandContextUtil;
 import org.flowable.common.engine.api.FlowableIllegalArgumentException;
-import org.flowable.common.engine.impl.query.AbstractQuery;
+import org.flowable.common.engine.api.query.QueryCacheValues;
 import org.flowable.common.engine.impl.interceptor.CommandContext;
 import org.flowable.common.engine.impl.interceptor.CommandExecutor;
+import org.flowable.common.engine.impl.query.AbstractQuery;
 
 /**
  * @author Dennis Federico
  */
-public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPlanItemInstanceQuery, HistoricPlanItemInstance> implements HistoricPlanItemInstanceQuery {
+public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPlanItemInstanceQuery, HistoricPlanItemInstance> 
+        implements HistoricPlanItemInstanceQuery, QueryCacheValues {
 
     private static final long serialVersionUID = 1L;
 
@@ -69,6 +71,7 @@ public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPla
     protected boolean notEnded;
     protected String entryCriterionId;
     protected String exitCriterionId;
+    protected boolean onlyStages;
     protected String tenantId;
     protected String tenantIdLike;
     protected boolean withoutTenantId;
@@ -183,6 +186,12 @@ public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPla
             throw new FlowableIllegalArgumentException("ExitCriterionId is null");
         }
         this.exitCriterionId = exitCriterionId;
+        return this;
+    }
+    
+    @Override
+    public HistoricPlanItemInstanceQuery onlyStages() {
+        this.onlyStages = true;
         return this;
     }
 
@@ -362,6 +371,56 @@ public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPla
     }
 
     @Override
+    public HistoricPlanItemInstanceQuery orderByLastAvailableTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_AVAILABLE_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByLastEnabledTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_ENABLED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByLastDisabledTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_DISABLED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByLastStartedTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_STARTED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByLastSuspendedTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_SUSPENDED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByLastUpdatedTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.LAST_UPDATED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByCompletedTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.COMPLETED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByOccurredTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.OCCURRED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByTerminatedTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.TERMINATED_TIME);
+    }
+
+    @Override
+    public HistoricPlanItemInstanceQuery orderByExitTime() {
+        return orderBy(HistoricPlanItemInstanceQueryProperty.EXIT_TIME);
+    }
+
+    @Override
     public HistoricPlanItemInstanceQuery orderByName() {
         return orderBy(HistoricPlanItemInstanceQueryProperty.NAME);
     }
@@ -377,6 +436,9 @@ public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPla
     }
 
     public String getPlanItemInstanceId() {
+        return planItemInstanceId;
+    }
+    public String getId() {
         return planItemInstanceId;
     }
     public String getPlanItemInstanceName() {
@@ -492,6 +554,9 @@ public class HistoricPlanItemInstanceQueryImpl extends AbstractQuery<HistoricPla
     }
     public String getExitCriterionId() {
         return exitCriterionId;
+    }
+    public boolean isOnlyStages() {
+        return onlyStages;
     }
     public String getTenantId() {
         return tenantId;
